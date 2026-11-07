@@ -1,0 +1,2166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rectify — Perspective Crop &amp; Straighten</title>
+<style>
+  :root{
+    --bg: #121212;
+    --panel: #1A1A1A;
+    --panel-2: #262626;
+    --line: #3A3A3A;
+    --text: #E8E8E8;
+    --muted: #9A9A9A;
+    --accent: #F5A623;   /* handle / measurement amber */
+    --accent-2: #5FD3C4; /* construction-line cyan */
+    --danger: #E5646E;
+    --mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;overflow:hidden;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    display:flex;
+    flex-direction:column;
+  }
+  button, .btn{
+    font-family:var(--sans);
+    font-size:12.5px;
+    font-weight:600;
+    letter-spacing:.01em;
+    color:var(--text);
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:8px 13px;
+    cursor:pointer;
+    transition:border-color .12s, background .12s;
+  }
+  button:hover{border-color:var(--accent-2);}
+  button:disabled{opacity:.35;cursor:not-allowed;}
+  button.primary, label.file-btn.primary{background:var(--accent);color:#1a1204;border-color:var(--accent);}
+  button.primary:hover, label.file-btn.primary:hover{background:#ffb841;}
+  button.ghost{background:transparent;}
+  button.danger{color:var(--danger);border-color:rgba(229,100,110,.4);}
+  button.danger:hover{border-color:var(--danger);background:rgba(229,100,110,.08);}
+  button.detect{background:transparent;color:var(--accent-2);border-color:rgba(95,211,196,.45);}
+  button.detect:hover{border-color:var(--accent-2);background:rgba(95,211,196,.15);color:var(--text);}
+  button.detect-solid{background:var(--accent-2);color:var(--bg);border-color:var(--accent-2);}
+  button.detect-solid:hover{background:#7fe0d4;}
+  button.primary-outline{background:transparent;color:var(--accent);border-color:rgba(245,166,35,.5);}
+  button.primary-outline:hover{border-color:var(--accent);background:rgba(245,166,35,.15);color:var(--text);}
+  input[type=file]{display:none;}
+  label.file-btn{
+    font-size:12.5px;font-weight:600;
+    background:var(--panel-2);border:1px solid var(--line);
+    border-radius:6px;padding:8px 13px;cursor:pointer;
+  }
+  label.file-btn:hover{border-color:var(--accent-2);}
+
+  .main{
+    flex:1;
+    display:grid;
+    grid-template-columns:160px 1fr 320px;
+    gap:0;
+    min-height:0;
+  }
+  .filmstrip{
+    border-right:1px solid var(--line);
+    background:var(--panel);
+    overflow-y:auto;
+    overflow-x:hidden;
+    min-height:0;
+    padding:10px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .thumb{
+    position:relative;
+    border:1.5px solid var(--line);
+    border-radius:6px;
+    overflow:hidden;
+    cursor:pointer;
+    background:#000;
+    aspect-ratio:1/1;
+    flex-shrink:0;
+  }
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block;opacity:.85;}
+  .thumb:hover{border-color:var(--accent-2);}
+  .thumb.active{border-color:var(--accent);}
+  .thumb .name{
+    position:absolute;bottom:0;left:0;right:0;
+    background:linear-gradient(transparent, rgba(0,0,0,.85));
+    font-family:var(--mono);font-size:9px;color:#fff;
+    padding:8px 5px 4px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .thumb .indicators{
+    position:absolute;top:5px;right:5px;
+    display:flex;gap:4px;
+  }
+  .thumb .dot{
+    width:7px;height:7px;border-radius:50%;
+  }
+  .thumb .dot.processed{
+    background:var(--accent-2);
+    box-shadow:0 0 4px var(--accent-2);
+  }
+  .thumb .dot.adjusted{
+    background:var(--accent);
+    box-shadow:0 0 4px var(--accent);
+  }
+  .thumb .remove{
+    position:absolute;top:3px;left:3px;
+    width:16px;height:16px;border-radius:50%;
+    background:rgba(0,0,0,.6);color:#fff;
+    font-size:11px;line-height:16px;text-align:center;
+    display:none;
+  }
+  .thumb:hover .remove{display:block;}
+
+  .editor{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+    min-width:0;
+    min-height:0;
+    position:relative;
+  }
+  .region-tabs{
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+    margin-bottom:12px;
+    max-width:100%;
+    justify-content:center;
+  }
+  .region-tab{
+    font-family:var(--mono);
+    font-size:11px;
+    padding:5px 9px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:5px;
+    color:var(--muted);
+    cursor:pointer;
+  }
+  .region-tab:hover{border-color:var(--accent-2);}
+  .region-tab.active{
+    border-color:var(--accent);
+    color:var(--text);
+    background:rgba(245,166,35,0.1);
+  }
+  .tab-dot{
+    display:inline-block;width:6px;height:6px;border-radius:50%;
+    margin-left:5px;vertical-align:middle;
+  }
+  .tab-dot.done{background:var(--accent-2);}
+  .tab-dot.adj{background:var(--accent);}
+
+  .canvas-wrap{
+    position:relative;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex:1;
+    width:100%;
+    min-height:0;
+  }
+  #editorCanvas{
+    background-image:
+      linear-gradient(rgba(95,211,196,.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(95,211,196,.06) 1px, transparent 1px);
+    background-size:20px 20px;
+    border:1px solid var(--line);
+    border-radius:4px;
+    touch-action:none;
+    cursor:default;
+  }
+  .empty-state{
+    color:var(--muted);
+    font-family:var(--mono);
+    font-size:13px;
+    text-align:center;
+    line-height:1.7;
+  }
+  .empty-state .k{color:var(--accent);}
+
+  .magnifier-wrap{
+    position:absolute;
+    border:2px solid var(--accent);
+    border-radius:6px;
+    overflow:hidden;
+    box-shadow:0 8px 24px rgba(0,0,0,.6);
+    pointer-events:none;
+    z-index:50;
+    background:#000;
+  }
+  #magnifierCanvas{display:block;}
+
+  .field{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    font-family:var(--mono);
+    font-size:11px;
+    color:var(--muted);
+  }
+  .field input{
+    width:64px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:5px;
+    color:var(--text);
+    font-family:var(--mono);
+    font-size:12px;
+    padding:6px 8px;
+  }
+  .field input:focus,.field select:focus{outline:none;border-color:var(--accent-2);}
+  .field select{background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit;width:100%;}
+
+  .nav-arrow{
+    position:absolute;
+    top:50%;
+    transform:translateY(-50%);
+    width:56px;
+    height:56px;
+    border-radius:50%;
+    background:rgba(18,27,43,0.85);
+    border:1px solid var(--line);
+    color:var(--text);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    z-index:40;
+    padding:0;
+    transition:border-color .12s, background .12s, transform .12s;
+  }
+  .nav-arrow svg{display:block;}
+  .nav-arrow:hover{border-color:var(--accent-2); background:rgba(22,35,58,0.95); transform:translateY(-50%) scale(1.05);}
+  .nav-arrow:disabled{opacity:.2; cursor:not-allowed; transform:translateY(-50%);}
+  .nav-arrow-left{left:12px;}
+  .nav-arrow-right{right:12px;}
+
+  .control-panel{
+    border-left:1px solid var(--line);
+    background:var(--panel);
+    padding:16px;
+    display:flex;
+    flex-direction:column;
+    gap:20px;
+    overflow-y:auto;
+    min-height:0;
+  }
+  .panel-group{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    padding-bottom:16px;
+    border-bottom:1px solid var(--line);
+  }
+  .panel-group:last-child{border-bottom:none; padding-bottom:0;}
+  .panel-group-row{
+    flex-direction:row;
+    align-items:center;
+    justify-content:space-between;
+  }
+  .panel-group h2{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    color:var(--muted);
+    margin:0 0 2px;
+    font-weight:600;
+  }
+  .full-width{width:100%; text-align:center; box-sizing:border-box;}
+  label.file-btn.full-width{display:block;}
+  .field-row{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  .field-row .field{flex:1; min-width:70px;}
+  .field-row .field input{width:100%;}
+  #nudgeAmount{width:52px; flex:none;}
+  .btn-row{
+    display:flex;
+    gap:8px;
+  }
+  .btn-row button{flex:1;}
+  .checkbox-field{
+    display:flex;
+    align-items:center;
+    gap:7px;
+    font-size:12.5px;
+    color:var(--text);
+    cursor:pointer;
+  }
+  .checkbox-field input{accent-color:var(--accent); width:14px; height:14px;}
+  #customNameInput{
+    width:100%;
+    box-sizing:border-box;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:5px;
+    color:var(--text);
+    font-family:var(--mono);
+    font-size:12px;
+    padding:7px 9px;
+  }
+  #customNameInput:focus{outline:none;border-color:var(--accent-2);}
+  #customNameInput:disabled{opacity:.45;}
+  .hint{
+    font-size:10.5px;
+    color:var(--muted);
+    line-height:1.5;
+  }
+
+  .modal-overlay{
+    position:fixed; inset:0;
+    background:rgba(0,0,0,.55);
+    display:flex; align-items:center; justify-content:center;
+    z-index:1000;
+  }
+  .modal-box{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:20px;
+    max-width:340px;
+    width:90%;
+    box-shadow:0 10px 40px rgba(0,0,0,.5);
+  }
+  .modal-box p{
+    font-size:13px; line-height:1.55; color:var(--text);
+    margin:0 0 16px;
+  }
+  .modal-actions{display:flex; flex-direction:column; gap:8px;}
+  .modal-actions button{width:100%;}
+
+  .log-panel{
+    position:fixed;
+    right:16px; bottom:16px;
+    width:380px;
+    max-height:320px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:8px;
+    box-shadow:0 10px 30px rgba(0,0,0,.5);
+    display:flex;
+    flex-direction:column;
+    z-index:900;
+  }
+  .log-header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:8px 10px;
+    border-bottom:1px solid var(--line);
+    font-size:11px; color:var(--muted);
+    text-transform:uppercase; letter-spacing:.06em; font-weight:600;
+  }
+  .log-header-btns{display:flex; gap:6px;}
+  .log-header-btns button{padding:4px 8px; font-size:10.5px;}
+  .log-body{
+    margin:0;
+    padding:10px;
+    overflow-y:auto;
+    font-family:var(--mono);
+    font-size:11px;
+    line-height:1.5;
+    color:var(--text);
+    white-space:pre-wrap;
+    word-break:break-word;
+  }
+</style>
+</head>
+<body>
+
+<div class="main">
+  <aside class="filmstrip" id="filmstrip"></aside>
+
+  <section class="editor">
+    <div class="region-tabs" id="regionTabs" style="display:none;"></div>
+    <div class="canvas-wrap">
+      <button id="prevImgBtn" class="nav-arrow nav-arrow-left" style="display:none;" title="Previous image"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
+      <canvas id="editorCanvas" style="display:none;"></canvas>
+      <div class="empty-state" id="emptyState">
+        No image loaded.<br>
+        Click <span class="k">Load images</span> to begin.<br><br>
+        Drag the four amber corners onto the shape<br>you want to flatten, then set an output size.
+      </div>
+      <div class="magnifier-wrap" id="magnifierWrap" style="display:none;">
+        <canvas id="magnifierCanvas"></canvas>
+      </div>
+      <button id="nextImgBtn" class="nav-arrow nav-arrow-right" style="display:none;" title="Next image"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+    </div>
+  </section>
+
+  <section class="control-panel">
+    <div class="panel-group panel-group-row">
+      <label class="file-btn primary">Load<input type="file" id="fileInput" accept=".png,.jpg,.jpeg,image/png,image/jpeg" multiple></label>
+      <button id="clearAllBtn" class="ghost danger" disabled>Clear All</button>
+    </div>
+
+    <div class="panel-group">
+      <h2>Output naming</h2>
+      <label class="checkbox-field"><input type="checkbox" id="customNameEnabled"> Custom output name</label>
+      <input type="text" id="customNameInput" placeholder="output" disabled>
+      <div class="field">Starting Frame # <input type="number" id="customNameStart" min="0" value="1" disabled></div>
+      <div class="hint">When on, every crop across every image is numbered in one continuous, padded sequence instead of restarting per image.</div>
+    </div>
+
+    <div class="panel-group">
+      <h2>Images</h2>
+      <div class="btn-row">
+        <button id="rotateLeftBtn" class="detect">↺ Rotate Left</button>
+        <button id="rotateRightBtn" class="detect">Rotate Right ↻</button>
+      </div>
+      <div class="field-row">
+        <div class="field">Layout <select id="layoutSelect"><option value="grid">Grid</option><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></select></div>
+      </div>
+      <div class="field-row">
+        <div class="field">Crops <input type="number" id="regionCount" min="1" max="50" value="4"></div>
+        <div class="field">W <input type="number" id="outW" min="1" value="1920"></div>
+        <div class="field">H <input type="number" id="outH" min="1" value="1080"></div>
+      </div>
+      <div class="btn-row">
+        <button id="applyCurrentBtn" class="detect">Apply to Current</button>
+        <button id="applyAllBtn" class="detect-solid" disabled>Apply to All</button>
+      </div>
+      <button id="resetBtn" class="detect full-width">Reset This Crop</button>
+      <div class="field-row">
+        <div class="field">Nudge Amount (px) <input type="number" id="nudgeAmount" min="1" max="999" value="10"></div>
+      </div>
+      <div class="btn-row">
+        <button id="expandCropBtn" class="detect">⤢ Expand Crop</button>
+        <button id="shrinkCropBtn" class="detect">⤡ Shrink Crop</button>
+      </div>
+      <div class="hint">Pushes all 4 corners of the selected crop outward or inward by this many pixels of the original photo. Useful when detection trims a bit too much or too little.</div>
+    </div>
+
+    <div class="panel-group">
+      <h2>Detect</h2>
+      <div class="btn-row">
+        <button id="detectBtn" class="detect">Detect Current</button>
+        <button id="detectAllBtn" class="detect-solid" disabled>Detect All</button>
+      </div>
+    </div>
+
+    <div class="panel-group">
+      <h2>Process</h2>
+      <div class="btn-row">
+        <button id="processBtn" class="detect">Process Current</button>
+        <button id="processAllBtn" class="detect-solid" disabled>Process All</button>
+      </div>
+      <div class="btn-row">
+        <button id="downloadBtn" class="primary-outline" disabled>Download Current</button>
+        <button id="downloadAllBtn" class="primary" disabled>Download All</button>
+      </div>
+    </div>
+
+    <div class="panel-group">
+      <button id="logToggleBtn" class="ghost full-width">Log</button>
+    </div>
+  </section>
+</div>
+
+<div class="modal-overlay" id="detectConfirmModal" style="display:none;">
+  <div class="modal-box">
+    <p id="detectConfirmText"></p>
+    <div class="modal-actions">
+      <button id="detectConfirmOverwrite" class="primary">Overwrite all</button>
+      <button id="detectConfirmOnlyUnadjusted">Only detect unadjusted crops</button>
+      <button id="detectConfirmCancel" class="ghost">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="log-panel" id="logPanel" style="display:none;">
+  <div class="log-header">
+    <span>Debug log</span>
+    <div class="log-header-btns">
+      <button id="logClearBtn" class="ghost">Clear</button>
+      <button id="logCloseBtn" class="ghost">✕</button>
+    </div>
+  </div>
+  <pre class="log-body" id="logBody"></pre>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- state ----------
+  // Each loaded image entry can contain MULTIPLE independent crop regions,
+  // so several sub-photos can be extracted and straightened out of one scan.
+  // entry.regions[i] = { corners:[{x,y}x4], cornersAdjusted:bool, resultCanvas:Canvas|null }
+  let images = [];      // {id, name, img, url, w, h, regions:[...], activeRegion, outW, outH}
+  let currentId = null;
+  let scale = 1;         // natural-image px -> canvas px
+  let dragIndex = -1;
+  let hoverIndex = -1;
+  let selectedHandleIndex = -1; // persists after a drag ends, so arrow keys can nudge it
+  const HANDLE_R = 8;
+  const HIT_R = 16;
+
+  const els = {
+    fileInput: document.getElementById('fileInput'),
+    filmstrip: document.getElementById('filmstrip'),
+    canvas: document.getElementById('editorCanvas'),
+    emptyState: document.getElementById('emptyState'),
+    magnifierWrap: document.getElementById('magnifierWrap'),
+    magnifierCanvas: document.getElementById('magnifierCanvas'),
+    regionTabs: document.getElementById('regionTabs'),
+    regionCount: document.getElementById('regionCount'),
+    layoutSelect: document.getElementById('layoutSelect'),
+    outW: document.getElementById('outW'),
+    outH: document.getElementById('outH'),
+    applyCurrentBtn: document.getElementById('applyCurrentBtn'),
+    applyAllBtn: document.getElementById('applyAllBtn'),
+    resetBtn: document.getElementById('resetBtn'),
+    nudgeAmount: document.getElementById('nudgeAmount'),
+    expandCropBtn: document.getElementById('expandCropBtn'),
+    shrinkCropBtn: document.getElementById('shrinkCropBtn'),
+    rotateLeftBtn: document.getElementById('rotateLeftBtn'),
+    rotateRightBtn: document.getElementById('rotateRightBtn'),
+    detectBtn: document.getElementById('detectBtn'),
+    processBtn: document.getElementById('processBtn'),
+    prevImgBtn: document.getElementById('prevImgBtn'),
+    nextImgBtn: document.getElementById('nextImgBtn'),
+    detectAllBtn: document.getElementById('detectAllBtn'),
+    processAllBtn: document.getElementById('processAllBtn'),
+    downloadAllBtn: document.getElementById('downloadAllBtn'),
+    clearAllBtn: document.getElementById('clearAllBtn'),
+    logToggleBtn: document.getElementById('logToggleBtn'),
+    logPanel: document.getElementById('logPanel'),
+    logBody: document.getElementById('logBody'),
+    logClearBtn: document.getElementById('logClearBtn'),
+    logCloseBtn: document.getElementById('logCloseBtn'),
+    customNameEnabled: document.getElementById('customNameEnabled'),
+    customNameInput: document.getElementById('customNameInput'),
+    customNameStart: document.getElementById('customNameStart'),
+    downloadBtn: document.getElementById('downloadBtn'),
+    detectConfirmModal: document.getElementById('detectConfirmModal'),
+    detectConfirmText: document.getElementById('detectConfirmText'),
+    detectConfirmOverwrite: document.getElementById('detectConfirmOverwrite'),
+    detectConfirmOnlyUnadjusted: document.getElementById('detectConfirmOnlyUnadjusted'),
+    detectConfirmCancel: document.getElementById('detectConfirmCancel'),
+  };
+  const ctx = els.canvas.getContext('2d');
+
+  // ---------- debug log panel ----------
+  // Everything here also goes to console.log, but this on-page panel means
+  // you don't need devtools open to see what a button actually did.
+  let logLines = [];
+  function logMsg(msg){
+    const time = new Date().toLocaleTimeString();
+    const line = '[' + time + '] ' + msg;
+    console.log(line);
+    logLines.push(line);
+    if(logLines.length > 300) logLines.shift();
+    els.logBody.textContent = logLines.join('\n');
+    els.logBody.scrollTop = els.logBody.scrollHeight;
+  }
+  els.logToggleBtn.addEventListener('click', () => {
+    els.logPanel.style.display = (els.logPanel.style.display === 'none') ? 'flex' : 'none';
+  });
+  els.logCloseBtn.addEventListener('click', () => { els.logPanel.style.display = 'none'; });
+  els.logClearBtn.addEventListener('click', () => { logLines = []; els.logBody.textContent = ''; });
+  window.addEventListener('error', (e) => {
+    logMsg('UNCAUGHT ERROR: ' + e.message + (e.filename ? (' (line ' + e.lineno + ')') : ''));
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    logMsg('UNHANDLED PROMISE REJECTION: ' + (e.reason && e.reason.message ? e.reason.message : String(e.reason)));
+  });
+
+  els.customNameEnabled.addEventListener('change', () => {
+    els.customNameInput.disabled = !els.customNameEnabled.checked;
+    els.customNameStart.disabled = !els.customNameEnabled.checked;
+  });
+  logMsg('Ready.');
+
+  let idCounter = 1;
+
+  // ---------- file loading ----------
+  const SUPPORTED_TYPES = ['image/png', 'image/jpeg'];
+  const SUPPORTED_EXT = ['.png', '.jpg', '.jpeg'];
+
+  function isSupportedImage(file){
+    if(SUPPORTED_TYPES.includes(file.type)) return true;
+    const m = file.name.toLowerCase().match(/\.[^.]+$/);
+    return !!(m && SUPPORTED_EXT.includes(m[0]));
+  }
+
+  els.fileInput.addEventListener('change', (e) => {
+    const files = Array.from(e.target.files || []);
+    const rejected = [];
+    files.forEach(f => {
+      if(isSupportedImage(f)) loadFile(f);
+      else rejected.push(f.name);
+    });
+    if(rejected.length){
+      alert('Skipped (only PNG, JPG and JPEG are supported):\n' + rejected.join('\n'));
+    }
+    e.target.value = '';
+  });
+
+  function loadFile(file){
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const id = idCounter++;
+      const w = img.naturalWidth, h = img.naturalHeight;
+      const entry = {
+        id, name: file.name, img, url,
+        w, h,
+        regions: makeRegions(4, w, h, 'grid'),
+        layout: 'grid',
+        activeRegion: 0,
+        outW: 1920, outH: 1080,
+      };
+      images.push(entry);
+      sortImages();
+      renderFilmstrip();
+      selectImage(id);
+      updateBatchButtons();
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      alert('Could not load "' + file.name + '" — the file may be corrupt or unsupported.');
+    };
+    img.src = url;
+  }
+
+  function sortImages(){
+    images.sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric:true, sensitivity:'base'}));
+  }
+
+  // ---------- region layout ----------
+  // Arranges N crop regions in a grid across the image so they start out
+  // non-overlapping and roughly where a multi-photo scan's sub-photos would be.
+  function layoutDims(count, layout){
+    if(layout === 'vertical') return {cols: 1, rows: Math.max(1, count)};
+    if(layout === 'horizontal') return {cols: Math.max(1, count), rows: 1};
+    const cols = Math.max(1, Math.ceil(Math.sqrt(count)));
+    return {cols, rows: Math.max(1, Math.ceil(count / cols))};
+  }
+
+  function gridLayout(count, w, h, layout){
+    const {cols, rows} = layoutDims(count, layout);
+    const cellW = w / cols, cellH = h / rows;
+    const mx = cellW * 0.10, my = cellH * 0.10;
+    const out = [];
+    for(let i=0;i<count;i++){
+      const col = i % cols, row = Math.floor(i / cols);
+      const x0 = col * cellW, y0 = row * cellH;
+      out.push([
+        {x: x0+mx,       y: y0+my},
+        {x: x0+cellW-mx, y: y0+my},
+        {x: x0+cellW-mx, y: y0+cellH-my},
+        {x: x0+mx,       y: y0+cellH-my},
+      ]);
+    }
+    return out;
+  }
+
+  function makeRegions(count, w, h, layout){
+    return gridLayout(count, w, h, layout).map(corners => ({
+      corners, cornersAdjusted: false, resultCanvas: null,
+    }));
+  }
+
+  // ---------- filmstrip ----------
+  function renderFilmstrip(){
+    const scrollPos = els.filmstrip.scrollTop;
+    els.filmstrip.innerHTML = '';
+    images.forEach(entry => {
+      const allProcessed = entry.regions.length > 0 && entry.regions.every(r => r.resultCanvas);
+      const anyAdjusted = entry.regions.some(r => r.cornersAdjusted);
+      const div = document.createElement('div');
+      div.className = 'thumb' + (entry.id === currentId ? ' active' : '');
+      div.innerHTML = `
+        <img src="${entry.img.src}">
+        <div class="remove" title="Remove">✕</div>
+        <div class="name">${escapeHtml(entry.name)}</div>
+        <div class="indicators">
+          ${anyAdjusted ? '<div class="dot adjusted" title="Corners adjusted"></div>' : ''}
+          ${allProcessed ? '<div class="dot processed" title="Processed"></div>' : ''}
+        </div>
+      `;
+      div.addEventListener('click', (e) => {
+        if(e.target.classList.contains('remove')){
+          removeImage(entry.id);
+          return;
+        }
+        selectImage(entry.id);
+      });
+      els.filmstrip.appendChild(div);
+    });
+    els.filmstrip.scrollTop = scrollPos;
+  }
+
+  function escapeHtml(s){
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function removeImage(id){
+    const entry = images.find(e => e.id === id);
+    if(entry && entry.url) URL.revokeObjectURL(entry.url);
+    images = images.filter(e => e.id !== id);
+    if(currentId === id){
+      currentId = images.length ? images[0].id : null;
+    }
+    renderFilmstrip();
+    if(currentId){ selectImage(currentId); } else { showEmpty(); }
+    updateBatchButtons();
+  }
+
+  // ---------- selection / editor ----------
+  // Buttons/fields that only make sense once an image is selected.
+  const CURRENT_IMAGE_CONTROLS = ['regionCount','layoutSelect','outW','outH','applyCurrentBtn','resetBtn','detectBtn','processBtn','rotateLeftBtn','rotateRightBtn','nudgeAmount','expandCropBtn','shrinkCropBtn'];
+
+  function setCurrentImageControlsEnabled(enabled){
+    CURRENT_IMAGE_CONTROLS.forEach(key => { els[key].disabled = !enabled; });
+  }
+
+  function selectImage(id){
+    currentId = id;
+    renderFilmstrip();
+    const entry = getCurrent();
+    if(!entry) { showEmpty(); return; }
+
+    els.canvas.style.display = 'block';
+    els.emptyState.style.display = 'none';
+    els.prevImgBtn.style.display = 'flex';
+    els.nextImgBtn.style.display = 'flex';
+    setCurrentImageControlsEnabled(true);
+
+    els.regionCount.value = entry.regions.length;
+    els.layoutSelect.value = entry.layout || 'grid';
+    els.outW.value = entry.outW;
+    els.outH.value = entry.outH;
+
+    dragIndex = -1;
+    hoverIndex = -1;
+    selectedHandleIndex = -1;
+    hideMagnifier();
+
+    // Region tabs must be shown/hidden BEFORE measuring available canvas
+    // space — otherwise the tabs bar can appear a moment after the canvas
+    // was already sized as if it weren't there, and visually overlap it.
+    renderRegionTabs();
+    fitCanvas(entry);
+    positionNavArrows();
+    drawEditor();
+    updateDownloadButtonForCurrent(entry);
+    updateNavButtons();
+  }
+
+  function showEmpty(){
+    els.canvas.style.display = 'none';
+    els.emptyState.style.display = 'block';
+    els.prevImgBtn.style.display = 'none';
+    els.nextImgBtn.style.display = 'none';
+    els.regionTabs.style.display = 'none';
+    setCurrentImageControlsEnabled(false);
+    els.downloadBtn.disabled = true;
+    dragIndex = -1;
+    hoverIndex = -1;
+    selectedHandleIndex = -1;
+    hideMagnifier();
+  }
+
+  function getCurrent(){
+    return images.find(e => e.id === currentId) || null;
+  }
+
+  function updateNavButtons(){
+    const idx = images.findIndex(e => e.id === currentId);
+    els.prevImgBtn.disabled = idx <= 0;
+    els.nextImgBtn.disabled = idx === -1 || idx >= images.length - 1;
+  }
+  els.prevImgBtn.addEventListener('click', () => {
+    const idx = images.findIndex(e => e.id === currentId);
+    if(idx > 0) selectImage(images[idx-1].id);
+  });
+  els.nextImgBtn.addEventListener('click', () => {
+    const idx = images.findIndex(e => e.id === currentId);
+    if(idx !== -1 && idx < images.length - 1) selectImage(images[idx+1].id);
+  });
+
+  // ---------- region tabs ----------
+  function renderRegionTabs(){
+    const entry = getCurrent();
+    els.regionTabs.innerHTML = '';
+    if(!entry || entry.regions.length <= 1){
+      els.regionTabs.style.display = 'none';
+      return;
+    }
+    els.regionTabs.style.display = 'flex';
+    entry.regions.forEach((r, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'region-tab' + (i === entry.activeRegion ? ' active' : '');
+      let dot = '';
+      if(r.resultCanvas) dot = '<span class="tab-dot done"></span>';
+      else if(r.cornersAdjusted) dot = '<span class="tab-dot adj"></span>';
+      btn.innerHTML = 'Crop ' + (i+1) + dot;
+      btn.addEventListener('click', () => {
+        entry.activeRegion = i;
+        drawEditor();
+        renderRegionTabs();
+      });
+      els.regionTabs.appendChild(btn);
+    });
+  }
+
+  // Reads the Crops/W/H fields once, used by both "Apply to current" and
+  // "Apply to all" so the two scopes behave identically.
+  function readSettingsFromFields(){
+    let crops = Math.round(Number(els.regionCount.value));
+    crops = Math.max(1, Math.min(50, crops || 1));
+    let w = Math.round(Number(els.outW.value));
+    let h = Math.round(Number(els.outH.value));
+    const layout = els.layoutSelect.value || 'grid';
+    return {crops, layout, w: (w>0?w:null), h: (h>0?h:null)};
+  }
+
+  // Applies a {crops, w, h} settings object to one image entry. Regenerates
+  // regions (resetting corners) only if the crop count actually changed;
+  // otherwise just clears stale results since the output size may differ now.
+  function applySettingsToEntry(entry, settings){
+    const layoutChanged = settings.layout !== (entry.layout || 'grid');
+    entry.layout = settings.layout;
+    if(settings.crops !== entry.regions.length || layoutChanged){
+      entry.regions = makeRegions(settings.crops, entry.w, entry.h, entry.layout);
+      entry.activeRegion = 0;
+    } else {
+      entry.regions.forEach(r => r.resultCanvas = null);
+    }
+    if(settings.w) entry.outW = settings.w;
+    if(settings.h) entry.outH = settings.h;
+  }
+
+  function refreshEditorForCurrent(entry){
+    els.regionCount.value = entry.regions.length;
+    els.layoutSelect.value = entry.layout || 'grid';
+    els.outW.value = entry.outW;
+    els.outH.value = entry.outH;
+    renderRegionTabs();
+    fitCanvas(entry);
+    positionNavArrows();
+    drawEditor();
+    updateDownloadButtonForCurrent(entry);
+    updateNavButtons();
+  }
+
+  els.applyCurrentBtn.addEventListener('click', () => {
+    const entry = getCurrent();
+    if(!entry) return;
+    const settings = readSettingsFromFields();
+    const changed = settings.crops !== entry.regions.length ||
+      settings.layout !== (entry.layout || 'grid') ||
+      (settings.w && settings.w !== entry.outW) ||
+      (settings.h && settings.h !== entry.outH);
+    if(!changed) return;
+    const hasWork = entry.regions.some(r => r.cornersAdjusted || r.resultCanvas);
+    if(hasWork && !confirm('This resets this image\'s corner positions and results to match the new settings. Continue?')) return;
+    applySettingsToEntry(entry, settings);
+    refreshEditorForCurrent(entry);
+    renderFilmstrip();
+  });
+
+  els.applyAllBtn.addEventListener('click', () => {
+    if(!images.length) return;
+    const settings = readSettingsFromFields();
+    const hasWork = images.some(e => e.regions.some(r => r.cornersAdjusted || r.resultCanvas));
+    if(hasWork && !confirm('This resets corner positions and results on every loaded image to match these settings. Continue?')) return;
+    images.forEach(entry => applySettingsToEntry(entry, settings));
+    renderFilmstrip();
+    const cur = getCurrent();
+    if(cur) refreshEditorForCurrent(cur);
+    updateBatchButtons();
+  });
+
+  function fitCanvas(entry){
+    const wrap = els.canvas.parentElement;
+    const maxW = Math.max(200, wrap.clientWidth - 4);
+    const maxH = Math.max(200, wrap.clientHeight - 4 || 480);
+    scale = Math.min(maxW / entry.w, maxH / entry.h, 1.5);
+    els.canvas.width = Math.round(entry.w * scale);
+    els.canvas.height = Math.round(entry.h * scale);
+  }
+
+  // Places the nav arrows in the middle of the leftover space between the
+  // rendered image edge and the surrounding panels, rather than pinned to a
+  // fixed distance from the canvas-wrap edge — since how much leftover space
+  // there is depends on the loaded image's aspect ratio.
+  function positionNavArrows(){
+    const wrap = els.canvas.parentElement;
+    const wrapWidth = wrap.clientWidth;
+    const canvasWidth = els.canvas.width;
+    const gap = Math.max(0, (wrapWidth - canvasWidth) / 2);
+    const btnHalf = 28; // half of the 56px button
+    const pos = Math.max(4, Math.round(gap/2 - btnHalf));
+    els.prevImgBtn.style.left = pos + 'px';
+    els.nextImgBtn.style.right = pos + 'px';
+  }
+
+  function toCanvas(p){ return {x: p.x*scale, y: p.y*scale}; }
+  function toImage(p){ return {x: p.x/scale, y: p.y/scale}; }
+
+  function drawEditor(){
+    const entry = getCurrent();
+    if(!entry) return;
+    ctx.clearRect(0,0,els.canvas.width, els.canvas.height);
+    ctx.drawImage(entry.img, 0, 0, els.canvas.width, els.canvas.height);
+
+    // Dim the whole image 75% first (this is "the rest of the image that
+    // will be cropped out"), then un-dim each crop region: fully clear for
+    // the selected one, only 25% dim for the others.
+    if(entry.regions.length > 1){
+      ctx.fillStyle = 'rgba(0,0,0,0.75)';
+      ctx.fillRect(0, 0, els.canvas.width, els.canvas.height);
+    }
+
+    entry.regions.forEach((region, i) => {
+      const pts = region.corners.map(toCanvas);
+      const isActive = i === entry.activeRegion;
+
+      if(entry.regions.length > 1){
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for(let k=1;k<4;k++) ctx.lineTo(pts[k].x, pts[k].y);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(entry.img, 0, 0, els.canvas.width, els.canvas.height);
+        if(!isActive){
+          ctx.fillStyle = 'rgba(0,0,0,0.25)';
+          ctx.fillRect(0, 0, els.canvas.width, els.canvas.height);
+        }
+        ctx.restore();
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for(let k=1;k<4;k++) ctx.lineTo(pts[k].x, pts[k].y);
+      ctx.closePath();
+      ctx.strokeStyle = isActive ? '#5FD3C4' : 'rgba(154,154,154,0.6)';
+      ctx.lineWidth = isActive ? 1.5 : 1;
+      ctx.setLineDash(isActive ? [6,4] : [3,3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if(isActive){
+        pts.forEach((p, hIdx) => {
+          if(hIdx === selectedHandleIndex){
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, HANDLE_R+4, 0, Math.PI*2);
+            ctx.strokeStyle = '#5FD3C4';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([3,3]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, HANDLE_R, 0, Math.PI*2);
+          ctx.fillStyle = (hIdx === hoverIndex || hIdx === dragIndex) ? '#ffcf70' : '#F5A623';
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = '#1a1204';
+          ctx.stroke();
+
+          ctx.font = '10px JetBrains Mono, monospace';
+          ctx.fillStyle = '#121212';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(String(hIdx+1), p.x, p.y+0.5);
+        });
+      } else if(entry.regions.length > 1){
+        const cx = pts.reduce((s,p)=>s+p.x,0)/4;
+        const cy = pts.reduce((s,p)=>s+p.y,0)/4;
+        ctx.font = '11px JetBrains Mono, monospace';
+        ctx.fillStyle = 'rgba(232,232,232,0.6)';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(i+1), cx, cy);
+      }
+    });
+  }
+
+  // ---------- dragging ----------
+  function pointInPolygon(pt, poly){
+    let inside = false;
+    for(let i=0, j=poly.length-1; i<poly.length; j=i++){
+      const xi=poly[i].x, yi=poly[i].y, xj=poly[j].x, yj=poly[j].y;
+      const intersect = ((yi>pt.y) !== (yj>pt.y)) &&
+        (pt.x < (xj-xi) * (pt.y-yi) / (yj-yi) + xi);
+      if(intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  els.canvas.addEventListener('pointerdown', (e) => {
+    const entry = getCurrent();
+    if(!entry) return;
+    const rect = els.canvas.getBoundingClientRect();
+    const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+    const idx = nearestHandle(entry, cx, cy);
+    if(idx !== -1){
+      dragIndex = idx;
+      selectedHandleIndex = idx;
+      els.canvas.setPointerCapture(e.pointerId);
+      drawEditor();
+      updateMagnifier(entry, entry.regions[entry.activeRegion], idx, e.clientX, e.clientY);
+      return;
+    }
+    // click inside a non-active region's quad switches which crop you're editing
+    if(entry.regions.length > 1){
+      for(let i=0;i<entry.regions.length;i++){
+        if(i === entry.activeRegion) continue;
+        const pts = entry.regions[i].corners.map(toCanvas);
+        if(pointInPolygon({x:cx,y:cy}, pts)){
+          entry.activeRegion = i;
+          drawEditor();
+          renderRegionTabs();
+          break;
+        }
+      }
+    }
+  });
+
+  els.canvas.addEventListener('pointermove', (e) => {
+    const entry = getCurrent();
+    if(!entry) return;
+    const rect = els.canvas.getBoundingClientRect();
+    const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+    const region = entry.regions[entry.activeRegion];
+
+    if(dragIndex !== -1){
+      const p = toImage({x: cx, y: cy});
+      p.x = Math.max(0, Math.min(entry.w, p.x));
+      p.y = Math.max(0, Math.min(entry.h, p.y));
+      region.corners[dragIndex] = p;
+      region.cornersAdjusted = true;
+      drawEditor();
+      updateMagnifier(entry, region, dragIndex, e.clientX, e.clientY);
+    } else {
+      const idx = nearestHandle(entry, cx, cy);
+      if(idx !== hoverIndex){
+        hoverIndex = idx;
+        els.canvas.style.cursor = idx !== -1 ? 'grab' : 'default';
+        drawEditor();
+      }
+    }
+  });
+
+  function endDrag(){
+    if(dragIndex !== -1){
+      dragIndex = -1;
+      drawEditor();
+      renderFilmstrip();
+      renderRegionTabs();
+      hideMagnifier();
+    }
+  }
+  els.canvas.addEventListener('pointerup', endDrag);
+  els.canvas.addEventListener('pointercancel', endDrag);
+  els.canvas.addEventListener('pointerleave', () => {
+    if(dragIndex === -1 && hoverIndex !== -1){ hoverIndex = -1; drawEditor(); }
+  });
+
+  // ---------- keyboard nudging ----------
+  // Arrow keys nudge the last-selected corner by 1 screen pixel (Shift = 10),
+  // converted into natural-image pixels so the nudge feels the same size on
+  // screen regardless of how zoomed out the source photo is. This works for
+  // fine adjustment even after you've let go of the mouse.
+  window.addEventListener('keydown', (e) => {
+    if(!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) return;
+    const active = document.activeElement;
+    if(active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+    const entry = getCurrent();
+    if(!entry || selectedHandleIndex === -1) return;
+    e.preventDefault();
+    const step = (e.shiftKey ? 10 : 1) / scale;
+    let dx = 0, dy = 0;
+    if(e.key === 'ArrowUp') dy = -step;
+    else if(e.key === 'ArrowDown') dy = step;
+    else if(e.key === 'ArrowLeft') dx = -step;
+    else if(e.key === 'ArrowRight') dx = step;
+    const region = entry.regions[entry.activeRegion];
+    const p = region.corners[selectedHandleIndex];
+    p.x = Math.max(0, Math.min(entry.w, p.x + dx));
+    p.y = Math.max(0, Math.min(entry.h, p.y + dy));
+    region.cornersAdjusted = true;
+    drawEditor();
+    renderFilmstrip();
+    renderRegionTabs();
+  });
+
+  // ---------- corner magnifier ----------
+  // A small zoomed-in loupe shown while dragging a corner, so precise
+  // placement on a high-resolution photo doesn't depend on how many actual
+  // image pixels one screen pixel covers at the current zoom level.
+  const MAG_SIZE = 160;
+  const MAG_ZOOM = 5;
+
+  function updateMagnifier(entry, region, cornerIdx, clientX, clientY){
+    const mctx = els.magnifierCanvas.getContext('2d');
+    els.magnifierCanvas.width = MAG_SIZE;
+    els.magnifierCanvas.height = MAG_SIZE;
+    mctx.imageSmoothingEnabled = false;
+    mctx.fillStyle = '#000';
+    mctx.fillRect(0, 0, MAG_SIZE, MAG_SIZE);
+
+    const corner = region.corners[cornerIdx];
+    const srcSize = MAG_SIZE / MAG_ZOOM;
+    const srcX = corner.x - srcSize/2, srcY = corner.y - srcSize/2;
+    mctx.drawImage(entry.img, srcX, srcY, srcSize, srcSize, 0, 0, MAG_SIZE, MAG_SIZE);
+
+    // the two quad edges touching this corner, for alignment context
+    const prevIdx = (cornerIdx+3)%4, nextIdx = (cornerIdx+1)%4;
+    const toMag = p => ({x: (p.x-srcX)*MAG_ZOOM, y: (p.y-srcY)*MAG_ZOOM});
+    mctx.strokeStyle = '#5FD3C4';
+    mctx.lineWidth = 1.5;
+    mctx.setLineDash([5,3]);
+    [prevIdx, nextIdx].forEach(otherIdx => {
+      const a = toMag(corner), b = toMag(region.corners[otherIdx]);
+      mctx.beginPath();
+      mctx.moveTo(a.x, a.y);
+      mctx.lineTo(b.x, b.y);
+      mctx.stroke();
+    });
+    mctx.setLineDash([]);
+
+    // crosshair marking the exact corner position (always the magnifier's center)
+    const c = MAG_SIZE/2;
+    mctx.strokeStyle = '#F5A623';
+    mctx.lineWidth = 1;
+    mctx.beginPath();
+    mctx.moveTo(c-14, c); mctx.lineTo(c+14, c);
+    mctx.moveTo(c, c-14); mctx.lineTo(c, c+14);
+    mctx.stroke();
+    mctx.beginPath();
+    mctx.arc(c, c, 3, 0, Math.PI*2);
+    mctx.fillStyle = '#F5A623';
+    mctx.fill();
+
+    // position near the cursor, offset so the finger/pointer doesn't cover it
+    const wrapRect = els.canvas.parentElement.getBoundingClientRect();
+    let left = clientX - wrapRect.left + 24;
+    let top = clientY - wrapRect.top - MAG_SIZE - 24;
+    if(top < 0) top = clientY - wrapRect.top + 24;
+    left = Math.max(4, Math.min(wrapRect.width - MAG_SIZE - 4, left));
+    els.magnifierWrap.style.left = left + 'px';
+    els.magnifierWrap.style.top = top + 'px';
+    els.magnifierWrap.style.display = 'block';
+  }
+
+  function hideMagnifier(){
+    els.magnifierWrap.style.display = 'none';
+  }
+
+  function nearestHandle(entry, cx, cy){
+    const region = entry.regions[entry.activeRegion];
+    const pts = region.corners.map(toCanvas);
+    let best = -1, bestD = HIT_R;
+    pts.forEach((p, i) => {
+      const d = Math.hypot(p.x-cx, p.y-cy);
+      if(d < bestD){ bestD = d; best = i; }
+    });
+    return best;
+  }
+
+  window.addEventListener('resize', () => {
+    const entry = getCurrent();
+    if(entry){ fitCanvas(entry); positionNavArrows(); drawEditor(); }
+  });
+
+  els.resetBtn.addEventListener('click', () => {
+    const entry = getCurrent();
+    if(!entry) return;
+    const grid = gridLayout(entry.regions.length, entry.w, entry.h, entry.layout);
+    const region = entry.regions[entry.activeRegion];
+    region.corners = grid[entry.activeRegion];
+    region.cornersAdjusted = false;
+    region.resultCanvas = null;
+    drawEditor();
+    renderFilmstrip();
+    renderRegionTabs();
+    updateDownloadButtonForCurrent(entry);
+  });
+
+  // Pushes all 4 corners of the active crop outward or inward by a fixed
+  // pixel amount (in the original photo's own resolution), using the same
+  // polygon-offset math the detector uses — a manual override for when
+  // detection trims a touch too much or too little on a particular crop.
+  function nudgeActiveCrop(signedDist){
+    const entry = getCurrent();
+    if(!entry) return;
+    const region = entry.regions[entry.activeRegion];
+    const moved = insetQuad(region.corners, signedDist);
+    region.corners = moved.map(p => ({
+      x: Math.max(0, Math.min(entry.w, p.x)),
+      y: Math.max(0, Math.min(entry.h, p.y)),
+    }));
+    region.cornersAdjusted = true;
+    region.resultCanvas = null;
+    drawEditor();
+    renderFilmstrip();
+    renderRegionTabs();
+    updateDownloadButtonForCurrent(entry);
+  }
+  function readNudgeAmount(){
+    const v = Math.round(Number(els.nudgeAmount.value)) || 10;
+    return Math.max(1, Math.min(999, v));
+  }
+  els.expandCropBtn.addEventListener('click', () => nudgeActiveCrop(-readNudgeAmount()));
+  els.shrinkCropBtn.addEventListener('click', () => nudgeActiveCrop(readNudgeAmount()));
+
+  // ---------- rotate source image ----------
+  // Bakes a 90° rotation into a new copy of the source image (rather than
+  // tracking rotation as a transform applied at draw/export time) — this
+  // keeps every other part of the tool (detection, the editor canvas, the
+  // magnifier, processing) working unchanged, since they can all keep
+  // assuming entry.img is already in the correct orientation. The tradeoff
+  // is that existing corner positions no longer make sense afterward, so
+  // this resets them — same as changing the crop count does.
+  function rotateEntry(entry, deltaDeg){
+    return new Promise((resolve, reject) => {
+      const newW = entry.h, newH = entry.w;
+      const rc = document.createElement('canvas');
+      rc.width = newW; rc.height = newH;
+      const rctx = rc.getContext('2d');
+      rctx.save();
+      if(deltaDeg === 90){
+        rctx.translate(newW, 0);
+        rctx.rotate(Math.PI/2);
+      } else {
+        rctx.translate(0, newH);
+        rctx.rotate(-Math.PI/2);
+      }
+      rctx.drawImage(entry.img, 0, 0);
+      rctx.restore();
+
+      rc.toBlob((blob) => {
+        if(!blob){ reject(new Error('Could not encode rotated image')); return; }
+        const newUrl = URL.createObjectURL(blob);
+        const newImg = new Image();
+        newImg.onload = () => {
+          if(entry.url) URL.revokeObjectURL(entry.url);
+          entry.img = newImg;
+          entry.url = newUrl;
+          entry.w = newW;
+          entry.h = newH;
+          entry.regions = makeRegions(entry.regions.length, newW, newH, entry.layout);
+          entry.activeRegion = 0;
+          resolve();
+        };
+        newImg.onerror = () => { URL.revokeObjectURL(newUrl); reject(new Error('Could not load rotated image')); };
+        newImg.src = newUrl;
+      }, 'image/png');
+    });
+  }
+
+  async function doRotate(deltaDeg){
+    const entry = getCurrent();
+    if(!entry) return;
+    const hasWork = entry.regions.some(r => r.cornersAdjusted || r.resultCanvas);
+    if(hasWork && !confirm('Rotating this image resets its corner positions and any processed results. Continue?')) return;
+    els.rotateLeftBtn.disabled = true;
+    els.rotateRightBtn.disabled = true;
+    logMsg('Rotating ' + entry.name + ' ' + (deltaDeg>0 ? 'right' : 'left') + '…');
+    try {
+      await rotateEntry(entry, deltaDeg);
+      renderFilmstrip();
+      refreshEditorForCurrent(entry);
+      updateBatchButtons();
+      logMsg('Rotate finished.');
+    } catch(err){
+      logMsg('ERROR: ' + (err && err.message ? err.message : String(err)));
+      console.error('Rotate failed:', err);
+      alert('Rotating the image failed: ' + (err && err.message ? err.message : err));
+    } finally {
+      els.rotateLeftBtn.disabled = false;
+      els.rotateRightBtn.disabled = false;
+    }
+  }
+  els.rotateLeftBtn.addEventListener('click', () => doRotate(-90));
+  els.rotateRightBtn.addEventListener('click', () => doRotate(90));
+
+  // ---------- homography ----------
+  // Solves for 3x3 H (row-major, h[8] fixed to 1) such that:
+  //   to.x = (h0*from.x + h1*from.y + h2) / (h6*from.x + h7*from.y + 1)
+  //   to.y = (h3*from.x + h4*from.y + h5) / (h6*from.x + h7*from.y + 1)
+  function solveHomography(from, to){
+    const A = [];
+    const b = [];
+    for(let i=0;i<4;i++){
+      const {x, y} = from[i];
+      const {x:u, y:v} = to[i];
+      A.push([x, y, 1, 0, 0, 0, -x*u, -y*u]); b.push(u);
+      A.push([0, 0, 0, x, y, 1, -x*v, -y*v]); b.push(v);
+    }
+    const h = gaussSolve(A, b);
+    return h.concat([1]);
+  }
+
+  function gaussSolve(A, b){
+    const n = A.length;
+    const M = A.map((row,i) => row.concat([b[i]]));
+    for(let col=0; col<n; col++){
+      let piv = col;
+      for(let r=col+1;r<n;r++){
+        if(Math.abs(M[r][col]) > Math.abs(M[piv][col])) piv = r;
+      }
+      [M[col], M[piv]] = [M[piv], M[col]];
+      const pv = M[col][col] || 1e-12;
+      for(let c=col;c<=n;c++) M[col][c] /= pv;
+      for(let r=0;r<n;r++){
+        if(r===col) continue;
+        const f = M[r][col];
+        if(f===0) continue;
+        for(let c=col;c<=n;c++) M[r][c] -= f*M[col][c];
+      }
+    }
+    return M.map(row => row[n]);
+  }
+
+  function applyH(H, x, y){
+    const w = H[6]*x + H[7]*y + H[8];
+    return {
+      x: (H[0]*x + H[1]*y + H[2]) / w,
+      y: (H[3]*x + H[4]*y + H[5]) / w,
+    };
+  }
+
+  function sampleBilinear(data, w, h, x, y){
+    x = Math.max(0, Math.min(w-1.001, x));
+    y = Math.max(0, Math.min(h-1.001, y));
+    const x0 = Math.floor(x), y0 = Math.floor(y);
+    const x1 = x0+1, y1 = y0+1;
+    const fx = x-x0, fy = y-y0;
+    const i00 = (y0*w+x0)*4, i10 = (y0*w+x1)*4, i01 = (y1*w+x0)*4, i11 = (y1*w+x1)*4;
+    const out = new Array(4);
+    for(let c=0;c<4;c++){
+      const top = data[i00+c]*(1-fx) + data[i10+c]*fx;
+      const bot = data[i01+c]*(1-fx) + data[i11+c]*fx;
+      out[c] = top*(1-fy) + bot*fy;
+    }
+    return out;
+  }
+
+  // ---------- processing ----------
+  // Processes every region of an image, yielding back to the browser between
+  // row-chunks so the tab (and rest of the system) stays responsive instead
+  // of freezing for the whole computation on large images / many crops.
+  async function processEntry(entry, onProgress){
+    const W = entry.outW, H = entry.outH;
+
+    const srcCanvas = document.createElement('canvas');
+    srcCanvas.width = entry.w; srcCanvas.height = entry.h;
+    const sctx = srcCanvas.getContext('2d');
+    sctx.drawImage(entry.img, 0, 0);
+    const srcData = sctx.getImageData(0,0,entry.w, entry.h).data;
+
+    const dstRect = [{x:0,y:0},{x:W,y:0},{x:W,y:H},{x:0,y:H}];
+    const ROWS_PER_CHUNK = Math.max(1, Math.floor(250000 / Math.max(1, W)));
+    const total = entry.regions.length;
+
+    for(let ri=0; ri<total; ri++){
+      const region = entry.regions[ri];
+      const Hmat = solveHomography(dstRect, region.corners);
+
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = W; outCanvas.height = H;
+      const octx = outCanvas.getContext('2d');
+      const outImgData = octx.createImageData(W, H);
+      const out = outImgData.data;
+
+      for(let y=0; y<H; y++){
+        for(let x=0;x<W;x++){
+          const sp = applyH(Hmat, x+0.5, y+0.5);
+          const px = sampleBilinear(srcData, entry.w, entry.h, sp.x, sp.y);
+          const o = (y*W+x)*4;
+          out[o]=px[0]; out[o+1]=px[1]; out[o+2]=px[2]; out[o+3]=255;
+        }
+        if(y % ROWS_PER_CHUNK === ROWS_PER_CHUNK - 1){
+          if(onProgress) onProgress(ri, total, y+1, H);
+          await new Promise(r => setTimeout(r, 0));
+        }
+      }
+      octx.putImageData(outImgData, 0, 0);
+      region.resultCanvas = outCanvas;
+    }
+  }
+
+  function updateDownloadButtonForCurrent(entry){
+    if(!entry){
+      els.downloadBtn.disabled = true;
+      return;
+    }
+    const processedCount = entry.regions.filter(r => r.resultCanvas).length;
+    els.downloadBtn.disabled = processedCount === 0;
+  }
+
+  els.processBtn.addEventListener('click', async () => {
+    const entry = getCurrent();
+    if(!entry) return;
+    els.processBtn.disabled = true;
+    const total = entry.regions.length;
+    await processEntry(entry, (ri, totalRegions, done, h) => {
+      const pct = Math.round(100 * ((ri + done/h) / totalRegions));
+      els.processBtn.textContent = total > 1
+        ? ('Processing crop ' + (ri+1) + '/' + total + '… ' + pct + '%')
+        : ('Processing… ' + pct + '%');
+    });
+    updateDownloadButtonForCurrent(entry);
+    renderFilmstrip();
+    renderRegionTabs();
+    updateBatchButtons();
+    els.processBtn.disabled = false;
+    els.processBtn.textContent = 'Process Current';
+  });
+
+  els.downloadBtn.addEventListener('click', () => {
+    const entry = getCurrent();
+    if(!entry) return;
+    const globalCtx = computeGlobalNumbering();
+    entry.regions.forEach((region, i) => {
+      if(region.resultCanvas) triggerDownload(region.resultCanvas, outName(entry, i, entry.regions.length, globalCtx));
+    });
+  });
+
+  els.processAllBtn.addEventListener('click', async () => {
+    els.processAllBtn.disabled = true;
+    for(let i=0;i<images.length;i++){
+      const entry = images[i];
+      els.processAllBtn.textContent = 'Processing image ' + (i+1) + '/' + images.length + '…';
+      await processEntry(entry);
+    }
+    renderFilmstrip();
+    renderRegionTabs();
+    const cur = getCurrent();
+    if(cur) updateDownloadButtonForCurrent(cur);
+    updateBatchButtons();
+    els.processAllBtn.disabled = false;
+    els.processAllBtn.textContent = 'Process All';
+  });
+
+  els.downloadAllBtn.addEventListener('click', async () => {
+    const globalCtx = computeGlobalNumbering();
+    const zipFiles = [];
+    for(const entry of images){
+      for(let i=0;i<entry.regions.length;i++){
+        const region = entry.regions[i];
+        if(!region.resultCanvas) continue;
+        const blob = await new Promise(res => region.resultCanvas.toBlob(res, 'image/png'));
+        const buf = new Uint8Array(await blob.arrayBuffer());
+        zipFiles.push({ name: outName(entry, i, entry.regions.length, globalCtx), data: buf });
+      }
+    }
+    if(!zipFiles.length) return;
+    els.downloadAllBtn.disabled = true;
+    els.downloadAllBtn.textContent = 'Zipping…';
+    const zipBlob = makeZipBlob(zipFiles);
+    const url = URL.createObjectURL(zipBlob);
+    const a = document.createElement('a');
+    const zipName = els.customNameEnabled.checked
+      ? sanitizeFilename(els.customNameInput.value || 'output') + '.zip'
+      : 'rectified-images.zip';
+    a.href = url; a.download = zipName;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    els.downloadAllBtn.disabled = false;
+    els.downloadAllBtn.textContent = 'Download All';
+  });
+
+  function triggerDownload(canvas, filename){
+    canvas.toBlob((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    }, 'image/png');
+  }
+
+  function sanitizeFilename(name){
+    const cleaned = name.replace(/[\/\\:*?"<>|]+/g, '').trim();
+    return cleaned || 'output';
+  }
+
+  // Assigns every region across every loaded image a stable sequential
+  // number (by image order, then region order), offset by the user's chosen
+  // start number, with a padding width based on the HIGHEST number actually
+  // reached (start + totalSlots - 1) — so padding stays correct and fixed
+  // even when the sequence doesn't start at 1, rather than shifting partway
+  // through as you process things gradually.
+  function computeGlobalNumbering(){
+    let totalSlots = 0;
+    images.forEach(e => totalSlots += e.regions.length);
+    const start = Math.max(0, Math.round(Number(els.customNameStart.value)) || 0);
+    const highest = start + Math.max(0, totalSlots - 1);
+    const pad = Math.max(2, String(highest).length);
+    const numbering = new Map();
+    let counter = start;
+    images.forEach(entry => {
+      entry.regions.forEach((region, idx) => {
+        numbering.set(entry.id + ':' + idx, counter);
+        counter++;
+      });
+    });
+    return {numbering, pad};
+  }
+
+  function outName(entry, idx, total, globalCtx){
+    if(els.customNameEnabled.checked){
+      const base = sanitizeFilename(els.customNameInput.value || 'output');
+      const ctx2 = globalCtx || computeGlobalNumbering();
+      const num = ctx2.numbering.has(entry.id + ':' + idx) ? ctx2.numbering.get(entry.id + ':' + idx) : 1;
+      return base + '_' + String(num).padStart(ctx2.pad, '0') + '.png';
+    }
+    const base = entry.name.replace(/\.[^.]+$/, '');
+    if(total <= 1) return base + '-rectified.png';
+    const pad = Math.max(2, String(total).length);
+    return base + '_' + String(idx+1).padStart(pad, '0') + '.png';
+  }
+
+  function updateBatchButtons(){
+    els.processAllBtn.disabled = images.length === 0;
+    els.detectAllBtn.disabled = images.length === 0;
+    els.applyAllBtn.disabled = images.length === 0;
+    els.downloadAllBtn.disabled = !images.some(e => e.regions.some(r => r.resultCanvas));
+    els.clearAllBtn.disabled = images.length === 0;
+  }
+
+  els.clearAllBtn.addEventListener('click', () => {
+    if(!images.length) return;
+    const count = images.length;
+    if(!confirm('Clear all ' + count + ' loaded image' + (count>1?'s':'') + '? This cannot be undone.')) return;
+    images.forEach(e => { if(e.url) URL.revokeObjectURL(e.url); });
+    images = [];
+    currentId = null;
+    dragIndex = -1;
+    hoverIndex = -1;
+    renderFilmstrip();
+    showEmpty();
+    updateBatchButtons();
+  });
+
+  // ---------- rectangle auto-detection (classic CV, no external model/network) ----------
+  // Pipeline: downscale -> grayscale -> Otsu threshold -> dark-pixel connected
+  // components -> convex hull -> simplify to 4 corners (falls back to a
+  // minimum-area rotated rectangle if a clean quad can't be found).
+  // Tuned for dark ink/outlines on a light background (e.g. hand-drawn panel
+  // borders on white paper), which is what Otsu's auto-threshold does well.
+
+  function otsuThreshold(hist, total){
+    let sum = 0;
+    for(let t=0;t<256;t++) sum += t*hist[t];
+    let sumB=0, wB=0, wF=0, varMax=0, threshold=127;
+    for(let t=0;t<256;t++){
+      wB += hist[t];
+      if(wB===0) continue;
+      wF = total - wB;
+      if(wF===0) break;
+      sumB += t*hist[t];
+      const mB = sumB/wB;
+      const mF = (sum-sumB)/wF;
+      const varBetween = wB*wF*(mB-mF)*(mB-mF);
+      if(varBetween > varMax){ varMax = varBetween; threshold = t; }
+    }
+    return threshold;
+  }
+
+  function dilateMask(mask, w, h){
+    const out = new Uint8Array(w*h);
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        let v = 0;
+        for(let dy=-1; dy<=1 && !v; dy++){
+          const yy=y+dy; if(yy<0||yy>=h) continue;
+          for(let dx=-1; dx<=1; dx++){
+            const xx=x+dx; if(xx<0||xx>=w) continue;
+            if(mask[yy*w+xx]){ v=1; break; }
+          }
+        }
+        out[y*w+x] = v;
+      }
+    }
+    return out;
+  }
+
+  function connectedComponents(mask, w, h, minArea){
+    const visited = new Uint8Array(w*h);
+    const comps = [];
+    const stackX = new Int32Array(w*h);
+    const stackY = new Int32Array(w*h);
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        const idx = y*w+x;
+        if(!mask[idx] || visited[idx]) continue;
+        let sp = 0;
+        stackX[sp]=x; stackY[sp]=y; sp++;
+        visited[idx]=1;
+        const points = [];
+        while(sp>0){
+          sp--;
+          const cx=stackX[sp], cy=stackY[sp];
+          points.push({x:cx,y:cy});
+          for(let dy=-1;dy<=1;dy++){
+            const ny=cy+dy; if(ny<0||ny>=h) continue;
+            for(let dx=-1;dx<=1;dx++){
+              const nx=cx+dx; if(nx<0||nx>=w) continue;
+              const nidx = ny*w+nx;
+              if(mask[nidx] && !visited[nidx]){
+                visited[nidx]=1;
+                stackX[sp]=nx; stackY[sp]=ny; sp++;
+              }
+            }
+          }
+        }
+        if(points.length >= minArea) comps.push(points);
+      }
+    }
+    return comps;
+  }
+
+  // Offsets a convex quad by `dist` along each edge's inward normal, keeping
+  // every edge parallel to the original — a proper polygon offset, not just
+  // scaling toward the centroid (which would distort a genuine trapezoid
+  // rather than shrink or grow it evenly). Positive `dist` shrinks the quad
+  // inward; negative `dist` expands it outward, using the exact same math.
+  function insetQuad(quad, dist){
+    if(dist === 0) return quad.map(p => ({x:p.x, y:p.y}));
+    const cx = quad.reduce((s,p)=>s+p.x,0)/4;
+    const cy = quad.reduce((s,p)=>s+p.y,0)/4;
+    const lines = [];
+    for(let i=0;i<4;i++){
+      const a = quad[i], b = quad[(i+1)%4];
+      const dx = b.x-a.x, dy = b.y-a.y;
+      const len = Math.hypot(dx,dy) || 1e-9;
+      const ux = dx/len, uy = dy/len;
+      let nx = -uy, ny = ux; // perpendicular; two possible directions
+      const midx = (a.x+b.x)/2, midy = (a.y+b.y)/2;
+      if(nx*(cx-midx) + ny*(cy-midy) < 0){ nx=-nx; ny=-ny; } // pick the inward one
+      lines.push({px: a.x+nx*dist, py: a.y+ny*dist, dx: ux, dy: uy});
+    }
+    function intersect(l1, l2){
+      const denom = l1.dx*l2.dy - l1.dy*l2.dx;
+      if(Math.abs(denom) < 1e-9) return {x:(l1.px+l2.px)/2, y:(l1.py+l2.py)/2};
+      const ddx = l2.px-l1.px, ddy = l2.py-l1.py;
+      const t = (ddx*l2.dy - ddy*l2.dx) / denom;
+      return {x: l1.px + l1.dx*t, y: l1.py + l1.dy*t};
+    }
+    const out = [];
+    for(let i=0;i<4;i++){
+      out.push(intersect(lines[(i+3)%4], lines[i]));
+    }
+    return out;
+  }
+
+  // Estimates border stroke thickness by sampling many points around the
+  // quad's perimeter and taking the MEDIAN local ink run-length at each,
+  // rather than one bulk (ink pixel count / perimeter) average. This matters
+  // when a drawing inside the rectangle crosses the border line somewhere —
+  // a bulk average gets dragged up by all that extra ink, but a median just
+  // treats those crossing points as the minority outliers they are, as long
+  // as most of the border is a clean, uncrossed line.
+  function estimateThickness(mask, dw, dh, quad, samplesPerEdge){
+    const cx = quad.reduce((s,p)=>s+p.x,0)/4, cy = quad.reduce((s,p)=>s+p.y,0)/4;
+    const samples = [];
+    for(let i=0;i<4;i++){
+      const a = quad[i], b = quad[(i+1)%4];
+      const dx = b.x-a.x, dy = b.y-a.y;
+      const len = Math.hypot(dx,dy) || 1e-9;
+      let nx = -dy/len, ny = dx/len;
+      const midx=(a.x+b.x)/2, midy=(a.y+b.y)/2;
+      if(nx*(cx-midx) + ny*(cy-midy) < 0){ nx=-nx; ny=-ny; } // inward
+      for(let t=1;t<samplesPerEdge;t++){
+        const frac = t/samplesPerEdge;
+        const px = a.x + dx*frac, py = a.y + dy*frac;
+        let steps = 0;
+        for(let s=-3; s<40; s++){
+          const sx = Math.round(px + nx*s), sy = Math.round(py + ny*s);
+          if(sx<0||sx>=dw||sy<0||sy>=dh) break;
+          if(mask[sy*dw+sx]){ steps++; }
+          else if(steps>0){ break; }
+        }
+        if(steps>0) samples.push(steps);
+      }
+    }
+    if(!samples.length) return null;
+    samples.sort((a,b)=>a-b);
+    return samples[Math.floor(samples.length/2)];
+  }
+
+  function convexHull(points){
+    const pts = points.slice().sort((a,b) => a.x===b.x ? a.y-b.y : a.x-b.x);
+    const cross = (o,a,b) => (a.x-o.x)*(b.y-o.y) - (a.y-o.y)*(b.x-o.x);
+    const lower = [];
+    for(const p of pts){
+      while(lower.length>=2 && cross(lower[lower.length-2], lower[lower.length-1], p) <= 0) lower.pop();
+      lower.push(p);
+    }
+    const upper = [];
+    for(let i=pts.length-1;i>=0;i--){
+      const p = pts[i];
+      while(upper.length>=2 && cross(upper[upper.length-2], upper[upper.length-1], p) <= 0) upper.pop();
+      upper.push(p);
+    }
+    upper.pop(); lower.pop();
+    return lower.concat(upper);
+  }
+
+  function polygonArea(pts){
+    let a = 0;
+    for(let i=0;i<pts.length;i++){
+      const p1=pts[i], p2=pts[(i+1)%pts.length];
+      a += p1.x*p2.y - p2.x*p1.y;
+    }
+    return Math.abs(a)/2;
+  }
+
+  function polygonPerimeter(pts){
+    let per = 0;
+    for(let i=0;i<pts.length;i++){
+      const p1=pts[i], p2=pts[(i+1)%pts.length];
+      per += Math.hypot(p2.x-p1.x, p2.y-p1.y);
+    }
+    return per;
+  }
+
+  function perpDist(p, a, b){
+    const dx=b.x-a.x, dy=b.y-a.y;
+    const len = Math.hypot(dx,dy) || 1e-9;
+    return Math.abs((p.x-a.x)*dy - (p.y-a.y)*dx) / len;
+  }
+
+  function dpSimplify(points, epsilon){
+    if(points.length<3) return points.slice();
+    let dmax=0, index=0;
+    const end = points.length-1;
+    for(let i=1;i<end;i++){
+      const d = perpDist(points[i], points[0], points[end]);
+      if(d>dmax){ dmax=d; index=i; }
+    }
+    if(dmax>epsilon){
+      const left = dpSimplify(points.slice(0,index+1), epsilon);
+      const right = dpSimplify(points.slice(index), epsilon);
+      return left.slice(0,-1).concat(right);
+    }
+    return [points[0], points[end]];
+  }
+
+  // Simplifies a CLOSED convex polygon. Douglas-Peucker needs two distinct
+  // endpoints to measure perpendicular distance against, so a closed loop is
+  // split at its two farthest-apart points into two open chains, each chain
+  // is simplified independently, then the results are stitched back together.
+  function simplifyClosedPolygon(hull, epsilon){
+    const n = hull.length;
+    if(n<3) return hull.slice();
+    let maxD=-1, ia=0, ib=1;
+    for(let i=0;i<n;i++){
+      for(let j=i+1;j<n;j++){
+        const d = (hull[i].x-hull[j].x)**2 + (hull[i].y-hull[j].y)**2;
+        if(d>maxD){ maxD=d; ia=i; ib=j; }
+      }
+    }
+    function chainFrom(start, end){
+      const chain = [];
+      let i = start;
+      while(true){
+        chain.push(hull[i]);
+        if(i===end) break;
+        i = (i+1) % n;
+      }
+      return chain;
+    }
+    const s1 = dpSimplify(chainFrom(ia, ib), epsilon);
+    const s2 = dpSimplify(chainFrom(ib, ia), epsilon);
+    return s1.slice(0,-1).concat(s2.slice(0,-1));
+  }
+
+  // Tries increasing simplification tolerances until the hull collapses to
+  // exactly 4 points (a clean quad corner-count); returns null if it never does.
+  function simplifyToQuad(hull){
+    const perim = polygonPerimeter(hull);
+    if(perim <= 0) return null;
+    for(let epsFrac=0.004; epsFrac<=0.3; epsFrac*=1.25){
+      const simplified = simplifyClosedPolygon(hull, perim*epsFrac);
+      if(simplified.length === 4) return simplified;
+      if(simplified.length < 4) break;
+    }
+    return null;
+  }
+
+  // Fallback: minimum-area bounding rectangle via rotating calipers, for
+  // components that don't simplify cleanly to a quad.
+  function minAreaRect(hull){
+    if(hull.length<3) return null;
+    let best = null;
+    for(let i=0;i<hull.length;i++){
+      const p1 = hull[i], p2 = hull[(i+1)%hull.length];
+      const angle = Math.atan2(p2.y-p1.y, p2.x-p1.x);
+      const cosA = Math.cos(-angle), sinA = Math.sin(-angle);
+      let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+      for(const p of hull){
+        const rx = p.x*cosA - p.y*sinA;
+        const ry = p.x*sinA + p.y*cosA;
+        if(rx<minX)minX=rx; if(rx>maxX)maxX=rx;
+        if(ry<minY)minY=ry; if(ry>maxY)maxY=ry;
+      }
+      const area = (maxX-minX)*(maxY-minY);
+      if(!best || area<best.area) best = {area, minX,maxX,minY,maxY, angle};
+    }
+    const cosA = Math.cos(best.angle), sinA = Math.sin(best.angle);
+    return [
+      {x:best.minX, y:best.minY},
+      {x:best.maxX, y:best.minY},
+      {x:best.maxX, y:best.maxY},
+      {x:best.minX, y:best.maxY},
+    ].map(p => ({
+      x: p.x*cosA - p.y*sinA,
+      y: p.x*sinA + p.y*cosA,
+    }));
+  }
+
+  // Orders 4 arbitrary points into top-left, top-right, bottom-right, bottom-left.
+  function orderQuadPoints(pts){
+    const m = pts.map(p => ({p, sum:p.x+p.y, diff:p.x-p.y}));
+    const tl = m.reduce((a,b)=> a.sum<b.sum?a:b).p;
+    const br = m.reduce((a,b)=> a.sum>b.sum?a:b).p;
+    const tr = m.reduce((a,b)=> a.diff>b.diff?a:b).p;
+    const bl = m.reduce((a,b)=> a.diff<b.diff?a:b).p;
+    return [tl, tr, br, bl];
+  }
+
+  // Detects up to targetCount rectangle-ish quads in the image, returned in
+  // full natural-image pixel coordinates, largest-area first.
+  async function detectRectangles(img, w, h, targetCount, layout){
+    await new Promise(r => setTimeout(r, 0)); // let the "Detecting…" label paint first
+
+    const maxDim = 900;
+    const dScale = Math.min(1, maxDim / Math.max(w, h));
+    const dw = Math.max(1, Math.round(w*dScale)), dh = Math.max(1, Math.round(h*dScale));
+
+    const dCanvas = document.createElement('canvas');
+    dCanvas.width = dw; dCanvas.height = dh;
+    const dctx = dCanvas.getContext('2d');
+    dctx.drawImage(img, 0, 0, dw, dh);
+    const imgData = dctx.getImageData(0, 0, dw, dh).data;
+
+    const gray = new Uint8ClampedArray(dw*dh);
+    const hist = new Uint32Array(256);
+    for(let p=0, i=0; p<dw*dh; p++, i+=4){
+      const g = Math.round(0.299*imgData[i] + 0.587*imgData[i+1] + 0.114*imgData[i+2]);
+      gray[p] = g; hist[g]++;
+    }
+
+    const threshold = otsuThreshold(hist, dw*dh);
+    let mask = new Uint8Array(dw*dh);
+    for(let p=0;p<dw*dh;p++) mask[p] = gray[p] <= threshold ? 1 : 0;
+    mask = dilateMask(mask, dw, dh); // bridges small gaps in hand-drawn borders
+
+    const minArea = Math.max(30, Math.round(dw*dh*0.001));
+    const components = connectedComponents(mask, dw, dh, minArea);
+
+    const candidates = [];
+    for(const points of components){
+      let bMinX=Infinity,bMaxX=-Infinity,bMinY=Infinity,bMaxY=-Infinity;
+      for(const p of points){
+        if(p.x<bMinX)bMinX=p.x; if(p.x>bMaxX)bMaxX=p.x;
+        if(p.y<bMinY)bMinY=p.y; if(p.y>bMaxY)bMaxY=p.y;
+      }
+      const bboxW = bMaxX-bMinX, bboxH = bMaxY-bMinY;
+
+      // Reject two common false-positive shapes before doing the expensive
+      // hull/interior work on them: (1) a component touching the edge of the
+      // photographed frame is almost always the background around the page,
+      // not a drawn rectangle; (2) an extremely elongated sliver (a ruled
+      // "notes" line, a table edge) is not a rectangle a person wants cropped.
+      const touchesFrameEdge = bMinX<=1 || bMaxX>=dw-2 || bMinY<=1 || bMaxY>=dh-2;
+      if(touchesFrameEdge) continue;
+      const aspect = Math.max(bboxW,bboxH) / Math.max(1, Math.min(bboxW,bboxH));
+      if(aspect > 6) continue;
+
+      // Find the OUTER edge of the border first — this only depends on where
+      // the dark ink pixels are, so it stays reliable no matter how busy the
+      // drawing inside the rectangle is. Then estimate the border's own
+      // stroke thickness and shrink the quad inward by that amount to land
+      // on the inner edge, instead of trying to directly find the enclosed
+      // open space (which is exactly what dense interior content disrupts).
+      const hull = convexHull(points);
+      if(hull.length < 3) continue;
+      let outerQuad = simplifyToQuad(hull);
+      if(!outerQuad) outerQuad = minAreaRect(hull);
+      if(!outerQuad) continue;
+      outerQuad = orderQuadPoints(outerQuad);
+
+      // Estimate border thickness from local samples around the perimeter
+      // (median), falling back to the bulk area/perimeter estimate only if
+      // sampling somehow finds nothing. Capped relative to the shape's own
+      // size as a defensive backstop against a runaway inset.
+      const medianThickness = estimateThickness(mask, dw, dh, outerQuad, 24);
+      const fallbackThickness = points.length / Math.max(1, polygonPerimeter(outerQuad));
+      const thicknessCap = Math.max(2, Math.min(bboxW, bboxH) * 0.06);
+      const thickness = Math.min(medianThickness != null ? medianThickness : fallbackThickness, thicknessCap);
+
+      const quad = insetQuad(outerQuad, thickness);
+      const area = polygonArea(quad);
+      if(area < dw*dh*0.005) continue;  // too small: likely noise
+      if(area > dw*dh*0.98) continue;   // too big: likely the whole page/frame
+      candidates.push({quad, area});
+    }
+
+    // Safety net: collapse any near-duplicate detections (same physical
+    // rectangle picked up twice, e.g. from a border that got split into two
+    // components) by dropping smaller candidates whose centroid falls too
+    // close to an already-kept, larger candidate's centroid.
+    candidates.sort((a,b) => b.area - a.area);
+    const deduped = [];
+    for(const c of candidates){
+      const cx = c.quad.reduce((s,p)=>s+p.x,0)/4;
+      const cy = c.quad.reduce((s,p)=>s+p.y,0)/4;
+      const r = Math.sqrt(c.area);
+      const isDup = deduped.some(k => Math.hypot(k.cx-cx, k.cy-cy) < 0.5*Math.min(r, k.r));
+      if(!isDup) deduped.push({...c, cx, cy, r});
+    }
+
+    const top = deduped.slice(0, targetCount);
+
+    // Reorder the kept quads into reading order (left-to-right, top-to-bottom)
+    // so they land in the same slots the default grid layout uses — e.g. with
+    // 4 crops: top-left, top-right, bottom-left, bottom-right.
+    const {cols, rows} = layoutDims(targetCount, layout);
+    const cellW = dw / cols, cellH = dh / rows;
+    top.forEach(c => {
+      const col = Math.max(0, Math.min(cols-1, Math.floor(c.cx / cellW)));
+      const row = Math.max(0, Math.min(rows-1, Math.floor(c.cy / cellH)));
+      c.slot = row*cols + col;
+    });
+    top.sort((a,b) => a.slot - b.slot || a.cy - b.cy);
+
+    const inv = 1/dScale;
+    return top.map(c =>
+      c.quad.map(p => ({x: p.x*inv, y: p.y*inv}))
+    );
+  }
+
+  // Runs detection for one image and assigns results into its regions.
+  // mode: 'overwrite' fills every slot; 'unadjusted' only fills slots the
+  // user hasn't manually touched, leaving adjusted ones alone.
+  // Returns how many regions actually got a detected quad assigned, so the
+  // caller can tell the user plainly when nothing was found.
+  async function runDetectionForEntry(entry, mode){
+    const targetCount = entry.regions.length;
+    const quads = await detectRectangles(entry.img, entry.w, entry.h, targetCount, entry.layout);
+    let qi = 0;
+    let assigned = 0;
+    for(let i=0;i<entry.regions.length;i++){
+      const region = entry.regions[i];
+      if(mode === 'unadjusted' && region.cornersAdjusted) continue;
+      if(qi < quads.length){
+        region.corners = quads[qi++];
+        region.cornersAdjusted = true;
+        region.resultCanvas = null;
+        assigned++;
+      }
+    }
+    return assigned;
+  }
+
+  // Three-way confirmation (overwrite / only-unadjusted / cancel) used before
+  // detection would clobber corners the user already adjusted by hand.
+  // Each button listener is { once: true } so it always self-removes after
+  // firing — this modal can be safely reopened any number of times with no
+  // risk of stale listeners from a previous call interfering.
+  function askDetectMode(message){
+    return new Promise(resolve => {
+      els.detectConfirmText.textContent = message;
+      els.detectConfirmModal.style.display = 'flex';
+      const finish = (result) => {
+        els.detectConfirmModal.style.display = 'none';
+        resolve(result);
+      };
+      els.detectConfirmOverwrite.addEventListener('click', () => finish('overwrite'), {once:true});
+      els.detectConfirmOnlyUnadjusted.addEventListener('click', () => finish('unadjusted'), {once:true});
+      els.detectConfirmCancel.addEventListener('click', () => finish('cancel'), {once:true});
+    });
+  }
+
+  els.detectBtn.addEventListener('click', async () => {
+    logMsg('Detect clicked.');
+    els.detectBtn.disabled = true;
+    try {
+      const entry = getCurrent();
+      if(!entry){ logMsg('No current image — aborting.'); return; }
+      logMsg('Image: ' + entry.name + ', regions=' + entry.regions.length);
+      let mode = 'overwrite';
+      if(entry.regions.some(r => r.cornersAdjusted)){
+        logMsg('Some regions already adjusted — asking overwrite mode.');
+        mode = await askDetectMode('Some crops on this image already have adjusted corners. Overwrite everything with detected rectangles, or only fill in the crops you have not touched?');
+        logMsg('User chose: ' + mode);
+        if(mode === 'cancel'){ logMsg('Cancelled.'); return; }
+      }
+      els.detectBtn.textContent = 'Detecting…';
+      logMsg('Running detection…');
+      const found = await runDetectionForEntry(entry, mode);
+      logMsg('Detection finished — regions filled: ' + found);
+      drawEditor();
+      renderRegionTabs();
+      renderFilmstrip();
+      updateDownloadButtonForCurrent(entry);
+      if(found === 0){
+        alert('No rectangles were detected in this image. You can adjust the corners manually, or try Detect again after checking the shapes have clear, unbroken dark outlines against a light background.');
+      }
+    } catch(err){
+      logMsg('ERROR: ' + (err && err.message ? err.message : String(err)));
+      console.error('Detect failed:', err);
+      alert('Detection hit an unexpected error and was stopped: ' + (err && err.message ? err.message : err));
+    } finally {
+      els.detectBtn.disabled = false;
+      els.detectBtn.textContent = 'Detect Current';
+      logMsg('Detect handler done, button re-enabled.');
+    }
+  });
+
+  els.detectAllBtn.addEventListener('click', async () => {
+    logMsg('Detect all clicked. images.length=' + images.length);
+    if(!images.length){ logMsg('No images loaded — aborting.'); return; }
+    els.detectAllBtn.disabled = true;
+    try {
+      let mode = 'overwrite';
+      const anyAdjustedAnywhere = images.some(entry => entry.regions.some(r => r.cornersAdjusted));
+      logMsg('anyAdjustedAnywhere=' + anyAdjustedAnywhere);
+      if(anyAdjustedAnywhere){
+        logMsg('Asking overwrite mode.');
+        mode = await askDetectMode('Some images already have adjusted corners. Overwrite everything with detected rectangles, or only fill in crops you have not touched?');
+        logMsg('User chose: ' + mode);
+        if(mode === 'cancel'){ logMsg('Cancelled.'); return; }
+      }
+      let totalFound = 0;
+      let imagesWithNone = 0;
+      for(let i=0;i<images.length;i++){
+        els.detectAllBtn.textContent = 'Detecting ' + (i+1) + '/' + images.length + '…';
+        logMsg('Detecting image ' + (i+1) + '/' + images.length + ': ' + images[i].name);
+        const found = await runDetectionForEntry(images[i], mode);
+        logMsg('  -> filled ' + found + ' region(s)');
+        totalFound += found;
+        if(found === 0) imagesWithNone++;
+      }
+      renderFilmstrip();
+      const cur = getCurrent();
+      if(cur){ drawEditor(); renderRegionTabs(); updateDownloadButtonForCurrent(cur); }
+      logMsg('Detect all finished. totalFound=' + totalFound + ', imagesWithNone=' + imagesWithNone);
+      if(totalFound === 0){
+        alert('No rectangles were detected in any loaded image. You can adjust corners manually, or check that the shapes have clear, unbroken dark outlines against a light background.');
+      } else if(imagesWithNone > 0){
+        alert(imagesWithNone + ' of ' + images.length + ' image(s) had no rectangles detected and were left unchanged.');
+      }
+    } catch(err){
+      logMsg('ERROR: ' + (err && err.message ? err.message : String(err)));
+      console.error('Detect all failed:', err);
+      alert('Detection hit an unexpected error and was stopped: ' + (err && err.message ? err.message : err));
+    } finally {
+      els.detectAllBtn.disabled = false;
+      els.detectAllBtn.textContent = 'Detect All';
+      logMsg('Detect all handler done, button re-enabled.');
+    }
+  });
+
+  // ---------- minimal self-contained ZIP writer (store/no-compression method) ----------
+  // No external library needed: images are already compressed (PNG), so storing
+  // them uncompressed in the archive costs nothing and keeps this file dependency-free.
+  const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for(let n=0;n<256;n++){
+      let c = n;
+      for(let k=0;k<8;k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+
+  function crc32(bytes){
+    let c = 0xFFFFFFFF;
+    for(let i=0;i<bytes.length;i++){
+      c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+    }
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  function u16(v){ return [v & 0xFF, (v>>>8) & 0xFF]; }
+  function u32(v){ return [v & 0xFF, (v>>>8) & 0xFF, (v>>>16) & 0xFF, (v>>>24) & 0xFF]; }
+
+  function makeZipBlob(files){
+    const chunks = [];
+    const central = [];
+    let offset = 0;
+
+    files.forEach(f => {
+      const nameBytes = new TextEncoder().encode(f.name);
+      const crc = crc32(f.data);
+      const size = f.data.length;
+
+      const local = new Uint8Array([
+        0x50,0x4B,0x03,0x04,
+        ...u16(20), ...u16(0), ...u16(0),
+        ...u16(0), ...u16(0),
+        ...u32(crc),
+        ...u32(size), ...u32(size),
+        ...u16(nameBytes.length), ...u16(0),
+      ]);
+      chunks.push(local, nameBytes, f.data);
+
+      const centralHeader = new Uint8Array([
+        0x50,0x4B,0x01,0x02,
+        ...u16(20), ...u16(20), ...u16(0), ...u16(0),
+        ...u16(0), ...u16(0),
+        ...u32(crc),
+        ...u32(size), ...u32(size),
+        ...u16(nameBytes.length), ...u16(0), ...u16(0),
+        ...u16(0), ...u16(0),
+        ...u32(0),
+        ...u32(offset),
+      ]);
+      central.push(centralHeader, nameBytes);
+
+      offset += local.length + nameBytes.length + f.data.length;
+    });
+
+    const centralStart = offset;
+    let centralSize = 0;
+    central.forEach(c => centralSize += c.length);
+
+    const end = new Uint8Array([
+      0x50,0x4B,0x05,0x06,
+      ...u16(0), ...u16(0),
+      ...u16(files.length), ...u16(files.length),
+      ...u32(centralSize),
+      ...u32(centralStart),
+      ...u16(0),
+    ]);
+
+    return new Blob([...chunks, ...central, end], { type: 'application/zip' });
+  }
+
+  // ---------- initial state ----------
+  showEmpty();
+  updateBatchButtons();
+
+})();
+</script>
+
+</body>
+</html>
